@@ -31,13 +31,22 @@ def add_rolling_features(city_df: pd.DataFrame, window: int = 30) -> pd.DataFram
     city_df["rolling_std_30"] = city_df["temperature"].rolling(window=window, min_periods=1).std().fillna(0.0)
     return city_df
 
+
 def seasonal_statistics(city_df: pd.DataFrame) -> pd.DataFrame:
     stat = (
-        city_df.groupby(["city", "season"], as_index=False)["temperature"].agg(season_mean="mean", season_std="std", season_min="min", season_max="max", observations="count")
+        city_df.groupby(["city", "season"], as_index=False)["temperature"]
+        .agg(
+            season_mean="mean",
+            season_std="std",
+            season_min="min",
+            season_max="max",
+            observations="count"
+        )
     )
     stat["lower_bound"] = stat["season_mean"] - 2 * stat["season_std"]
     stat["upper_bound"] = stat["season_mean"] + 2 * stat["season_std"]
     return stat
+
 
 def detect_anomalies(city_df: pd.DataFrame, stat_df: pd.DataFrame) -> pd.DataFrame:
     merged = city_df.merge(
@@ -45,11 +54,16 @@ def detect_anomalies(city_df: pd.DataFrame, stat_df: pd.DataFrame) -> pd.DataFra
         on=["city", "season"],
         how="left",
     )
+
+    merged["rolling_lower_bound"] = merged["rolling_mean_30"] - 2 * merged["rolling_std_30"]
+    merged["rolling_upper_bound"] = merged["rolling_mean_30"] + 2 * merged["rolling_std_30"]
+
     merged["is_anomaly"] = (
-        (merged["temperature"] < merged["lower_bound"]) |
-        (merged["temperature"] > merged["upper_bound"])
+        (merged["temperature"] < merged["rolling_lower_bound"]) |
+        (merged["temperature"] > merged["rolling_upper_bound"])
     )
     return merged
+
 
 def add_linear_trend(city_df: pd.DataFrame) -> pd.DataFrame:
     city_df = city_df.sort_values("timestamp").copy()
@@ -58,6 +72,7 @@ def add_linear_trend(city_df: pd.DataFrame) -> pd.DataFrame:
     city_df["trend"] = intercept + slope * x
     city_df["trend_slope"] = slope
     return city_df
+
 
 def analyze(city_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     city_df = add_rolling_features(city_df)
